@@ -1,0 +1,9 @@
+*.pt
+runs/
+rotated_output/
+__pycache__/
+*.log
+*.tmp
+*.jpg
+*.jpeg
+*.png

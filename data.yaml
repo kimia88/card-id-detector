@@ -1,0 +1,6 @@
+path: D:/card-id-detector
+train: images/train
+val: images/val
+
+names:
+  0: CARD
