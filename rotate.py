@@ -1,68 +1,57 @@
-import os
-from pathlib import Path
-import torch
-from torch.utils.data import DataLoader
-from torchvision import datasets, transforms, models
-import torch.nn as nn
-import torch.optim as optim
+import cv2
+import pytesseract
 
-# مسیر دیتاست (مسیر دقیق خودت رو قرار بده)
-DATA_DIR = r"D:\card-id-detector\dataset"
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
-# تبدیل‌ها (augmentations ساده)
-data_transforms = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406],
-                         [0.229, 0.224, 0.225])
-])
+def rotate_image(image, angle):
+    if angle == 90:
+        return cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
+    elif angle == 180:
+        return cv2.rotate(image, cv2.ROTATE_180)
+    elif angle == 270:
+        return cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    else:
+        return image
 
-# دیتاست و داتالودر
-dataset = datasets.ImageFolder(DATA_DIR, transform=data_transforms)
-dataloader = DataLoader(dataset, batch_size=8, shuffle=True)
+def is_face_top_left(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(gray, 1.1, 4)
+    h, w = gray.shape
+    for (x, y, fw, fh) in faces:
+        cx, cy = x + fw//2, y + fh//2
+        if cx < w//2 and cy < h//2:
+            return True
+    return False
 
-# دستگاه (GPU اگر باشه)
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def count_farsi_chars(text):
+    return sum(1 for ch in text if '\u0600' <= ch <= '\u06FF')
 
-# مدل pretrained ResNet18
-model = models.resnet18(pretrained=True)
-num_ftrs = model.fc.in_features
-model.fc = nn.Linear(num_ftrs, 4)  # 4 کلاس (0، 90، 180، 270)
-model = model.to(device)
+def get_farsi_score(image):
+    h = image.shape[0]
+    top_half = image[0:h//2, :]
+    bottom_half = image[h//2:, :]
 
-# Loss و Optimizer
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+    text_top = pytesseract.image_to_string(top_half, lang='fas', config='--psm 6')
+    text_bottom = pytesseract.image_to_string(bottom_half, lang='fas', config='--psm 6')
 
-# آموزش مدل
-num_epochs = 20
-model.train()
+    score = count_farsi_chars(text_top) * 1.5 + count_farsi_chars(text_bottom)
+    return score
 
-for epoch in range(num_epochs):
-    running_loss = 0.0
-    running_corrects = 0
+def rotate_image_best_angle(image):
+    best_score = -1
+    best_angle = 0
+    best_image = image
 
-    for inputs, labels in dataloader:
-        inputs = inputs.to(device)
-        labels = labels.to(device)
+    for angle in [0, 90, 180, 270]:
+        rotated = rotate_image(image, angle)
+        has_face_top_left = is_face_top_left(rotated)
+        ocr_score = get_farsi_score(rotated)
+        total_score = ocr_score + (10 if has_face_top_left else 0)
 
-        optimizer.zero_grad()
+        if total_score > best_score:
+            best_score = total_score
+            best_angle = angle
+            best_image = rotated
 
-        outputs = model(inputs)
-        _, preds = torch.max(outputs, 1)
-        loss = criterion(outputs, labels)
-
-        loss.backward()
-        optimizer.step()
-
-        running_loss += loss.item() * inputs.size(0)
-        running_corrects += torch.sum(preds == labels.data)
-
-    epoch_loss = running_loss / len(dataset)
-    epoch_acc = running_corrects.double() / len(dataset)
-
-    print(f"Epoch {epoch+1}/{num_epochs}, Loss: {epoch_loss:.4f}, Accuracy: {epoch_acc:.4f}")
-
-# ذخیره مدل
-torch.save(model.state_dict(), "rotation_classifier.pth")
-print("Training complete and model saved!")
+    return best_image

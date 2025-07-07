@@ -5,14 +5,6 @@ from pathlib import Path
 from tqdm import tqdm
 
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-
-INPUT_DIRS = [
-    r"D:\card-id-detector\runs\detect\predict3",
-    r"D:\card-id-detector\runs\detect\predict4"
-]
-OUTPUT_DIR = r"D:\card-id-detector\rotated_output"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
 def rotate_image(image, angle):
@@ -49,28 +41,37 @@ def get_farsi_score(image):
     score = count_farsi_chars(text_top) * 1.5 + count_farsi_chars(text_bottom)
     return score
 
-for folder in INPUT_DIRS:
-    image_files = list(Path(folder).rglob("*.[jp][pn]g")) + list(Path(folder).rglob("*.jpeg"))
-    for image_path in tqdm(image_files, desc=f"Processing {folder}"):
-        image = cv2.imread(str(image_path))
-        if image is None:
-            continue
+def run_rotation(input_dirs, output_dir):
+    """
+    چرخش هوشمند کارت‌ها بر اساس تشخیص چهره و OCR فارسی
+    ورودی:
+      input_dirs: لیست فولدرها (هر فولدر شامل عکس‌هایی برای چرخش)
+      output_dir: مسیر ذخیره عکس‌های چرخش‌یافته
+    """
+    os.makedirs(output_dir, exist_ok=True)
 
-        best_score = -1
-        best_angle = 0
-        best_image = image
+    for folder in input_dirs:
+        image_files = list(Path(folder).rglob("*.[jp][pn]g")) + list(Path(folder).rglob("*.jpeg"))
+        for image_path in tqdm(image_files, desc=f"Processing {folder}"):
+            image = cv2.imread(str(image_path))
+            if image is None:
+                continue
 
-        for angle in [0, 90, 180, 270]:
-            rotated = rotate_image(image, angle)
-            has_face_top_left = is_face_top_left(rotated)
-            ocr_score = get_farsi_score(rotated)
-            total_score = ocr_score + (10 if has_face_top_left else 0)
+            best_score = -1
+            best_angle = 0
+            best_image = image
 
-            if total_score > best_score:
-                best_score = total_score
-                best_angle = angle
-                best_image = rotated
+            for angle in [0, 90, 180, 270]:
+                rotated = rotate_image(image, angle)
+                has_face_top_left = is_face_top_left(rotated)
+                ocr_score = get_farsi_score(rotated)
+                total_score = ocr_score + (10 if has_face_top_left else 0)
 
-        print(f"{image_path.name}: زاویه انتخاب شده = {best_angle}")
-        output_name = f"{image_path.stem}_rotated.jpg"
-        cv2.imwrite(str(Path(OUTPUT_DIR) / output_name), best_image)
+                if total_score > best_score:
+                    best_score = total_score
+                    best_angle = angle
+                    best_image = rotated
+
+            print(f"{image_path.name}: زاویه انتخاب شده = {best_angle}")
+            output_name = f"{image_path.stem}_rotated.jpg"
+            cv2.imwrite(str(Path(output_dir) / output_name), best_image)
