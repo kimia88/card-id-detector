@@ -1,0 +1,5 @@
+train: D:/card-id-detector/my_dataset/images/train
+val: D:/card-id-detector/my_dataset/images/val
+
+nc: 1
+names: ['CARD']
